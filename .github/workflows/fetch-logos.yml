@@ -82,7 +82,27 @@ jobs:
           git add -A assets data out
           git diff --staged --quiet && echo 'nothing to commit' && exit 0
           git commit -m 'Fetch logo assets via workflow run ${{ github.run_number }}'
-          git push
+
+          # A fetch run takes tens of minutes; anything else pushed to this branch in
+          # that window makes a plain `git push` fail as a non-fast-forward. Rebase onto
+          # whatever landed and retry rather than losing an hour-plus of fetched assets
+          # to a race - this hit twice before this loop existed.
+          for attempt in 1 2 3 4 5; do
+            if git push; then
+              echo "pushed on attempt $attempt"
+              exit 0
+            fi
+            echo "push rejected (attempt $attempt/5) - fetching and rebasing onto latest"
+            git fetch origin "${{ github.ref_name }}"
+            if ! git rebase "origin/${{ github.ref_name }}"; then
+              echo "rebase hit a real conflict - not something a retry can fix, needs a human"
+              git rebase --abort
+              exit 1
+            fi
+            sleep $((attempt * 5))
+          done
+          echo "push still failing after 5 attempts"
+          exit 1
 
       - name: Summary
         if: always()

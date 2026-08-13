@@ -1,0 +1,65 @@
+name: Recover logo-assets artifact
+
+# Applies a previous "Fetch logos" run's logo-assets artifact to this branch, for when
+# that run's own commit step failed (e.g. a push race) but the fetch itself succeeded.
+# Saves re-paying the ~80+ minute fetch just to recover a commit-step failure.
+# Trigger from the Actions tab: Run workflow -> paste the source run's numeric ID.
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Run ID of the "Fetch logos" run whose logo-assets artifact to apply (the number in its URL, e.g. 31723113567)'
+        required: true
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download the source run's artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: logo-assets
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: _recovered
+
+      - name: Apply recovered files
+        run: |
+          test -d _recovered/assets && rsync -a _recovered/assets/ assets/
+          test -f _recovered/data/fetch_report.csv && cp _recovered/data/fetch_report.csv data/fetch_report.csv
+          test -f _recovered/data/master_list.tsv && cp _recovered/data/master_list.tsv data/master_list.tsv
+          test -f _recovered/data/master_list.csv && cp _recovered/data/master_list.csv data/master_list.csv
+          mkdir -p out
+          find _recovered/out -name '*.xlsx' -exec cp {} out/ \; 2>/dev/null || true
+          rm -rf _recovered
+
+      - name: Commit recovered assets
+        run: |
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add -A assets data out
+          git diff --staged --quiet && echo 'nothing to commit' && exit 0
+          git commit -m "Recover logo assets from run ${{ inputs.run_id }} (commit step there failed on a push race)"
+
+          for attempt in 1 2 3 4 5; do
+            if git push; then
+              echo "pushed on attempt $attempt"
+              exit 0
+            fi
+            echo "push rejected (attempt $attempt/5) - fetching and rebasing onto latest"
+            git fetch origin "${{ github.ref_name }}"
+            if ! git rebase "origin/${{ github.ref_name }}"; then
+              echo "rebase hit a real conflict - needs a human"
+              git rebase --abort
+              exit 1
+            fi
+            sleep $((attempt * 5))
+          done
+          echo "push still failing after 5 attempts"
+          exit 1
