@@ -124,6 +124,18 @@ After a successful download it writes back `Logo Source URL`, `Native Aspect Rat
 detected from the alpha channel), and `Downloaded File Link`, and appends the source and
 licence to Notes.
 
+**Candidate ordering.** Only the first `--max-candidates` (default 8) candidates found are
+actually downloaded, to bound runtime - a busy homepage can produce plenty of low-value
+matches (payment-method icons, partner badges, social links all loosely match the "logo"/
+"brand" heuristic used to scan `<img>` tags). Candidates are sorted by source confidence
+before that budget is applied, so structured hits (`<link rel=icon>`, `og:image`, the
+app-store icon, the domain-logo API) always get tried ahead of those loose `<img>` guesses,
+regardless of which resolver happened to find them first or how many low-value matches a
+given page has. Without this, a bank with a cluttered homepage could exhaust its entire
+budget on partner-logo images before ever reaching its own app-store icon - which is exactly
+what happened to `banks/indo/bni` before this fix (24 candidates found, all 8 tried were
+`<img>` guesses, 0 usable; the real fix, not raising the size floor further).
+
 ### What it will not touch
 
 Rows marked `Flagged - Excluded` are skipped — those brands are defunct. Myanmar rows are

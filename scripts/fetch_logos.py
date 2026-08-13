@@ -220,13 +220,17 @@ def _harvest(soup: BeautifulSoup, base: str, source: str) -> list[Candidate]:
         out.append(Candidate(url=urllib.parse.urljoin(base, og["content"]), source=source,
                              kind="unknown", note="og:image"))
 
-    # <img> tags that look like a logo, by src / alt / class.
+    # <img> tags that look like a logo, by src / alt / class. This is a loose
+    # heuristic - a busy homepage can match plenty of things that aren't the
+    # institution's own logo (partner badges, payment-method icons, social
+    # links) - so these are tagged with a distinct, lower-confidence source
+    # ("-img" suffix) rather than the structured <link>/og:image hits above.
     for img in soup.find_all("img", src=True):
         hay = " ".join([img.get("src", ""), img.get("alt", ""),
                         " ".join(img.get("class", []))]).lower()
         if "logo" in hay or "brand" in hay:
             kind = "wordmark" if "logo" in hay else "unknown"
-            out.append(Candidate(url=urllib.parse.urljoin(base, img["src"]), source=source,
+            out.append(Candidate(url=urllib.parse.urljoin(base, img["src"]), source=f"{source}-img",
                                  kind=kind, note=f"<img> {img.get('alt', '')[:40]}"))
     return out
 
@@ -243,7 +247,7 @@ def resolve_domain_logo(row: list[str], fetcher: Fetcher) -> list[Candidate]:
         return []
     domain = urllib.parse.urlsplit(site).netloc
     return [Candidate(url=f"https://logo.clearbit.com/{domain}?size=512&format=png",
-                      source="brand-site", kind="unknown",
+                      source="domain-logo", kind="unknown",
                       note=f"domain-logo API for {domain}")]
 
 
@@ -340,13 +344,23 @@ def _measure_raster(cand: Candidate) -> bool:
     return True
 
 
+# Confidence ranking shared by scoring (after download) and candidate ordering
+# (before download, so a tight --max-candidates budget is spent on the most
+# promising sources first instead of whichever resolver happened to run first).
+# The "-img" tiers are the loose <img class=logo>-style heuristic matches, kept
+# below the structured tag-based hits (<link rel=icon>, og:image, app-store,
+# domain-logo) since a busy homepage can match plenty of things that aren't the
+# institution's own logo.
+SOURCE_RANK = {"brand-press": 5, "brand-site": 4, "app-store": 4, "domain-logo": 4,
+               "wikimedia": 2, "brand-press-img": 2, "brand-site-img": 2,
+               "favicon-service": 0}
+
+
 def score(cand: Candidate, want_variant: str) -> tuple:
     """Rank candidates. Higher is better; compared as a tuple, left to right."""
-    source_rank = {"brand-press": 4, "brand-site": 3, "app-store": 3,
-                   "wikimedia": 2, "favicon-service": 0}
     return (
         cand.is_vector,                                   # SVG beats raster
-        source_rank.get(cand.source, 1),                  # official beats aggregated - checked
+        SOURCE_RANK.get(cand.source, 1),                   # official beats aggregated - checked
                                                            # before variant match, so a weak
                                                            # last-resort source can't win just
                                                            # because it happens to be tagged
@@ -441,21 +455,32 @@ def process(row, fetcher, overrides, args, report):
         print(f"  MISS  {path}: no candidates")
         return False
 
+    # A busy homepage can hand back plenty of candidates (partner badges, payment
+    # icons, social links all loosely match the "logo"/"brand" heuristic); sort by
+    # source confidence before applying the download budget so a tight
+    # --max-candidates never starves the actually-promising sources (app-store,
+    # domain-logo, structured <link>/og:image tags) in favor of whichever
+    # low-confidence match happened to be found first.
+    candidates.sort(key=lambda c: SOURCE_RANK.get(c.source, 1), reverse=True)
+    tried = candidates[: args.max_candidates]
+
     if args.dry_run:
-        for c in candidates[: args.max_candidates]:
+        for c in tried:
             report.append({"figma_path": path, "outcome": "candidate",
                            "detail": f"{c.source} | {c.kind} | {c.note} | {c.licence}", "url": c.url})
-        print(f"  found {path}: {len(candidates)} candidate(s)")
+        print(f"  found {path}: {len(candidates)} candidate(s), would try {len(tried)}")
         return False
 
     good = []
-    for cand in candidates[: args.max_candidates]:
+    for cand in tried:
         if download(cand, fetcher) and usable(cand):
             good.append(cand)
     if not good:
         report.append({"figma_path": path, "outcome": "unusable",
-                       "detail": f"{len(candidates)} candidate(s), none met the {CONFIG['min_edge']}px floor", "url": ""})
-        print(f"  MISS  {path}: nothing met the size floor")
+                       "detail": (f"tried {len(tried)} of {len(candidates)} candidate(s) "
+                                 f"(best sources first), none met the {CONFIG['min_edge']}px floor"),
+                       "url": ""})
+        print(f"  MISS  {path}: nothing met the size floor ({len(tried)}/{len(candidates)} tried)")
         return False
 
     best = max(good, key=lambda c: score(c, row[C_VARIANT]))
