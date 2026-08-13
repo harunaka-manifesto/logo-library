@@ -32,6 +32,12 @@ permissions:
 jobs:
   fetch:
     runs-on: ubuntu-latest
+    env:
+      # Python block-buffers stdout when it isn't a TTY (i.e. under Actions),
+      # so without this the per-row progress lines the script prints can sit
+      # invisible for a long stretch before a buffer flush - looks stuck even
+      # when it isn't. This makes every step's Python output stream live.
+      PYTHONUNBUFFERED: "1"
     steps:
       - uses: actions/checkout@v4
 
