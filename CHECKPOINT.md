@@ -16,12 +16,22 @@ anything else; the "Do this first" section at the bottom is the actual next step
     trustworthy again (see "Do this first" below). The Sheet has no update-in-place API in this
     session's toolset, so it has to be manually re-imported each time the data changes
     meaningfully — this has not been done since the international-corridor expansion.
-- **GitHub Actions "Fetch logos" workflow run #2** (id `31715978369`) was *still in_progress*
-  as of the last check tonight, running on commit `b7b5c82` — i.e. **before** the fetch-quality
-  fixes in `71113c7` (size floor, domain-logo resolver, app-store matching, scoring bug). Its
-  result, whenever it finishes, reflects the old resolver behavior and is not representative of
-  what the current code will produce. Don't be alarmed by a high miss rate in that run's report —
-  it's expected, and already fixed in code that just hasn't been run yet.
+- **GitHub Actions "Fetch logos" workflow run #2** (id `31715978369`, commit `b7b5c82`,
+  *before* the fetch-quality fixes) **finished but its final step failed**: the actual fetch
+  step succeeded (ran ~80 min, downloaded real assets - shopeepay.png, alipay.png,
+  wechat-pay.png, revolut.svg, alfamart.png, indomaret.png, and more), but the "Commit assets"
+  step's `git push` was rejected as a non-fast-forward, because commits `71113c7` and `76f42e0`
+  landed on the branch *while the run was executing* (the runner checked out the branch at
+  15:32, the fix commits landed ~15:31-16:52 in this same session). The downloaded assets from
+  that run are not lost - they're in the run's `logo-assets` artifact - but that artifact isn't
+  worth recovering: it reflects the pre-fix 512px floor, not the current 128px one, so a fresh
+  run beats it on both correctness (no push race) and quality (has the fixes).
+  **Run #3 was triggered** (`workflow_dispatch` with `commit: true`) immediately after
+  diagnosing this, on the stable head `76f42e0` with nothing else queued to push mid-run. Check
+  its status first when resuming - it may have finished successfully overnight. If it also
+  failed to push (unlikely now, but possible if you or I push something to this branch while
+  it's running), the fix is the same: don't push to this branch while a `commit: true` run is
+  in flight, and re-trigger.
 
 ## Session narrative (why things are the way they are)
 
@@ -68,25 +78,35 @@ anything else; the "Do this first" section at the bottom is the actual next step
 
 ## Do this first tomorrow
 
-1. **Check on run #2** (https://github.com/harunaka-manifesto/logo-library/actions/runs/31715978369).
-   If it finished, its `fetch_report.csv` artifact is a useful *baseline* (old resolver code) but
-   not the number to judge quality by — the real test is the next run.
-2. **Trigger a fresh run** on the Actions tab → "Fetch logos" → "Run workflow" (a new dispatch,
-   not "re-run", so it picks up `71113c7`). Recommend starting with `dry_run: true` and
-   `only: banks/indo` to sanity-check the new hit rate on a fast slice before committing to the
-   full ~249-row run. If that looks good, run for real with `commit: true` so the downloaded
-   assets land back on this branch.
-3. **Compare miss rates** between the two runs' `fetch_report.csv` (download as workflow
-   artifacts) to confirm the fixes actually moved the needle. If misses are still high in a
-   particular category, pull a few example rows and check `outcome`/`detail` columns for the
-   actual reason (unresolved vs. unusable vs. skipped) rather than assuming.
-4. **Re-import the Sheet.** Once you're happy with a fetch run's results (or even just to reflect
-   the current 249-row list), open the Sheet link above → File → Import → Upload →
-   `data/master_list.csv` → "Replace current sheet". This does not change the Sheet's URL.
-5. **For any row that still misses**, use `data/source_overrides.tsv` — add a line
+1. **Check on run #3** (Actions tab → "Fetch logos" → latest run, triggered tonight with
+   `commit: true` on the stable head `76f42e0`). This is the one that actually matters — it has
+   every fetch-quality fix (128px floor, domain-logo resolver, token matching, scoring fix) and
+   nothing should have raced its push this time. Expect it to take roughly the same ~80 minutes
+   run #2 did (249 rows, ~1 request/sec with politeness delay).
+   - If it succeeded: the assets are already committed to this branch. Skip to step 3.
+   - If it failed on the same "Commit assets" push step: check whether anything else pushed to
+     this branch while it ran (`git log --oneline -5`) - that's the only way this specific
+     failure mode recurs. Its `logo-assets` artifact still has everything even if the commit
+     step failed; either re-trigger, or `git fetch`+manually apply the artifact's `assets/`,
+     `data/master_list.tsv`, `data/master_list.csv` and `data/fetch_report.csv` on top of current
+     head yourself if you don't want to re-spend the ~80 minutes.
+   - If it failed somewhere else (not the commit step): that's a genuinely new failure mode,
+     not one that's already been diagnosed - read the actual step logs before assuming anything.
+2. **Read `data/fetch_report.csv`** (now on the branch, or from the artifact) for the real
+   outcome breakdown - counts of `downloaded` / `unresolved` / `unusable` / `skipped` / `exists`.
+   This is the number that tells you whether the fixes actually moved the needle, not a guess.
+   If a particular category still misses a lot, pull a few example rows and check the `detail`
+   column for the actual reason rather than assuming.
+3. **Re-import the Sheet.** Open the Sheet link above → File → Import → Upload →
+   `data/master_list.csv` → "Replace current sheet". This does not change the Sheet's URL. Worth
+   doing regardless of the fetch outcome, just to reflect the current 249-row list.
+4. **For any row that still misses**, use `data/source_overrides.tsv` — add a line
    `<figma_path><TAB><direct image URL>` and re-run; overrides beat every automated resolver.
    Manual sourcing options discussed: Wikipedia infobox images, Brandfetch.com, the institution's
    own press/investor-relations page.
+5. **While a `commit: true` run is in flight, don't push to this branch** — that's exactly what
+   caused run #2's push failure. If you want to make code changes while a run is executing,
+   queue them and push only after it finishes (or after cancelling it).
 
 ## Useful references
 
