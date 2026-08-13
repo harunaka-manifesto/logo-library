@@ -5,7 +5,9 @@ anything else; the "Do this first" section at the bottom is the actual next step
 
 ## Where things stand
 
-- **Branch:** `claude/payment-retail-logo-research-9gxjfr`, pushed. Latest commit: `71113c7`.
+- **Branch:** `claude/payment-retail-logo-research-9gxjfr`, pushed. Latest commit: `22be826`.
+- **249/249 rows fetched:** 208 downloaded, 26 unusable, 9 unresolved, 6 skipped (see below).
+  Real asset files are on the branch under `assets/`.
 - **Master list:** 249 rows in `data/master_list.tsv` / `data/master_list.csv`.
 - **Drive:**
   - Folder: https://drive.google.com/drive/folders/14iGABfKzcp5k5kbNE9wrIaZIABcFl3H2
@@ -26,12 +28,28 @@ anything else; the "Do this first" section at the bottom is the actual next step
   that run are not lost - they're in the run's `logo-assets` artifact - but that artifact isn't
   worth recovering: it reflects the pre-fix 512px floor, not the current 128px one, so a fresh
   run beats it on both correctness (no push race) and quality (has the fixes).
-  **Run #3 was triggered** (`workflow_dispatch` with `commit: true`) immediately after
-  diagnosing this, on the stable head `76f42e0` with nothing else queued to push mid-run. Check
-  its status first when resuming - it may have finished successfully overnight. If it also
-  failed to push (unlikely now, but possible if you or I push something to this branch while
-  it's running), the fix is the same: don't push to this branch while a `commit: true` run is
-  in flight, and re-trigger.
+  **Run #3 hit the identical failure** - this time because I pushed the checkpoint-update
+  commit 5 minutes after triggering it, racing its own 87-minute fetch. Rather than lose real
+  data a second time: fixed `fetch-logos.yml`'s commit step to retry-with-rebase (5 attempts,
+  handles the branch moving mid-run automatically from now on), added
+  `.github/workflows/recover-artifact.yml` (given a run ID, downloads that run's `logo-assets`
+  artifact and commits it - no need to redo the fetch), and used it to recover run #3's results
+  without re-paying the 87 minutes.
+
+  **Result: 208 of 249 rows downloaded successfully (83.5%)** - a big jump from the ~50% seen
+  before the fix commit. Already committed to this branch (commit `22be826`) and confirmed
+  correct: e.g. `banks/indo/bca` resolved to a real vector logo pulled directly from BCA's own
+  CDN, with measured aspect ratio and background type written back. No row is auto-marked
+  `Verified` - that's still a human call, by design.
+
+  Remaining 41 rows: 9 `unresolved` (no candidate found at all - all have no `website` filled
+  in, e.g. `banks/indo/smbc-indonesia`, `banks/indo/mizuho-indonesia`,
+  `banks/indo/anz-indonesia`, `minimarkets/indo/alfaexpress`, `ecommerce/indo/ralali` - these
+  were left blank on purpose per their Notes, pending a human decision), 26 `unusable`
+  (candidates found but none passed even the 128px floor - worth a look, since some rows like
+  `banks/indo/bni` found 24 candidates and still came up empty, which smells systematic rather
+  than "this bank just has no big logo" and hasn't been root-caused yet), 6 `skipped` (4
+  `Flagged - Excluded` + the 2 Myanmar sanctioned rows, exactly as expected).
 
 ## Session narrative (why things are the way they are)
 
@@ -78,35 +96,34 @@ anything else; the "Do this first" section at the bottom is the actual next step
 
 ## Do this first tomorrow
 
-1. **Check on run #3** (Actions tab → "Fetch logos" → latest run, triggered tonight with
-   `commit: true` on the stable head `76f42e0`). This is the one that actually matters — it has
-   every fetch-quality fix (128px floor, domain-logo resolver, token matching, scoring fix) and
-   nothing should have raced its push this time. Expect it to take roughly the same ~80 minutes
-   run #2 did (249 rows, ~1 request/sec with politeness delay).
-   - If it succeeded: the assets are already committed to this branch. Skip to step 3.
-   - If it failed on the same "Commit assets" push step: check whether anything else pushed to
-     this branch while it ran (`git log --oneline -5`) - that's the only way this specific
-     failure mode recurs. Its `logo-assets` artifact still has everything even if the commit
-     step failed; either re-trigger, or `git fetch`+manually apply the artifact's `assets/`,
-     `data/master_list.tsv`, `data/master_list.csv` and `data/fetch_report.csv` on top of current
-     head yourself if you don't want to re-spend the ~80 minutes.
-   - If it failed somewhere else (not the commit step): that's a genuinely new failure mode,
-     not one that's already been diagnosed - read the actual step logs before assuming anything.
-2. **Read `data/fetch_report.csv`** (now on the branch, or from the artifact) for the real
-   outcome breakdown - counts of `downloaded` / `unresolved` / `unusable` / `skipped` / `exists`.
-   This is the number that tells you whether the fixes actually moved the needle, not a guess.
-   If a particular category still misses a lot, pull a few example rows and check the `detail`
-   column for the actual reason rather than assuming.
-3. **Re-import the Sheet.** Open the Sheet link above → File → Import → Upload →
-   `data/master_list.csv` → "Replace current sheet". This does not change the Sheet's URL. Worth
-   doing regardless of the fetch outcome, just to reflect the current 249-row list.
-4. **For any row that still misses**, use `data/source_overrides.tsv` — add a line
-   `<figma_path><TAB><direct image URL>` and re-run; overrides beat every automated resolver.
-   Manual sourcing options discussed: Wikipedia infobox images, Brandfetch.com, the institution's
-   own press/investor-relations page.
-5. **While a `commit: true` run is in flight, don't push to this branch** — that's exactly what
-   caused run #2's push failure. If you want to make code changes while a run is executing,
-   queue them and push only after it finishes (or after cancelling it).
+1. **Re-import the Sheet.** Open the Sheet link above → File → Import → Upload →
+   `data/master_list.csv` → "Replace current sheet". Does not change the Sheet's URL. This
+   hasn't been done since the fetch completed, so the Sheet still shows empty asset columns for
+   208 rows that now actually have them.
+2. **Spot-check a sample of the 208 `downloaded` rows** against the actual institution - the
+   resolver is automated and nothing is marked `Verified`, by design. `banks/indo/bca` checked
+   out correctly (real BCA-hosted SVG); worth eyeballing a handful more, especially any `icon`
+   or `app-icon` variant picks, before trusting the batch.
+3. **Root-cause the `unusable` rows before just raising `--min-edge` further** -
+   `banks/indo/bni` found 24 candidates and still failed the 128px floor, which is suspicious
+   for a major bank's own site. Worth pulling `data/fetch_report.csv`'s `detail` column for a
+   few of these 26 rows to see what was actually being rejected (raw favicon.ico? blocked by
+   robots.txt so only the weak fallback candidates got tried?) rather than assuming the floor
+   is still too high.
+4. **The 9 `unresolved` rows all have an empty `website` column on purpose** - each one's Notes
+   explain why (pending a rebrand-domain confirmation for `smbc-indonesia`, "wholesale only,
+   confirm scope" for `mizuho-indonesia`/`mufg-indonesia`/`anz-indonesia`/`bank-of-china-indonesia`,
+   uncertain operating status for `alfaexpress`/`ralali`, plus `kb-bank-syariah` and
+   `victoria-syariah`). Resolve the underlying question first (an actual human call, not
+   something the fetcher can do), then fill in the site and re-run just that row with
+   `--only <path> --force`.
+5. **For anything that still misses after that**, use `data/source_overrides.tsv` — add a line
+   `<figma_path><TAB><direct image URL>` and re-run with `--force`; overrides beat every
+   automated resolver. Manual sourcing options already discussed: Wikipedia infobox images,
+   Brandfetch.com, the institution's own press/investor-relations page.
+6. **While a `commit: true` run is in flight, don't push to this branch.** The retry-with-rebase
+   fix means a stray push won't lose the run's results anymore, but it'll still cost the ~5x25s
+   worth of retry/rebase cycles for no reason - just avoid it.
 
 ## Useful references
 
