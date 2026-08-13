@@ -32,6 +32,23 @@ brand/press-kit domains, app-store endpoints, Wikimedia Commons and the regulato
 This dataset is the worklist for that run: institution list, paths and variant guidance all
 carry over unchanged.
 
+## Where the deliverables live
+
+| Artifact | Link |
+|---|---|
+| Drive folder (root) | https://drive.google.com/drive/folders/14iGABfKzcp5k5kbNE9wrIaZIABcFl3H2 |
+| Master List sheet | https://docs.google.com/spreadsheets/d/11TnjRb0cC3tbXxYi-OofEM9kX5xQ00OQNDXx1x-gD3s/edit |
+| README doc | https://docs.google.com/document/d/1FfJ9O1CjdbSolCESIC38ogwp8gWXrTVoNIv97CbA_0w/edit |
+
+The brief asked for one sheet with two tabs. This session had Google Drive file-creation only
+and no Sheets API, so tabs cannot be added to an existing spreadsheet — the README is a
+separate Doc and the Master List is the sheet. `scripts/build_sheet.py` generates a genuine
+two-tab `.xlsx` that merges them, for whoever runs the next pass with fuller tooling.
+
+The Drive folder also contains the empty asset scaffold: 30 folders mirroring the naming
+convention (`banks/indo`, `banks/sea/{sg,my,th,ph,vn,kh,la,bn,mm}`, `ewallets/...`,
+`minimarkets/indo`, `ecommerce/indo`), ready for the sourcing pass to drop files into.
+
 ## Layout
 
 | Path | What it is |
