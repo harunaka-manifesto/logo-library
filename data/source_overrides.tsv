@@ -1,0 +1,6 @@
+# Manual URL pins, for rows where automatic resolution picks the wrong asset.
+# Format:  <figma path><TAB><direct URL to the logo file>
+# These take priority over every resolver, so a pinned row is fetched verbatim.
+#
+# Example:
+# banks/indo/bca	https://www.bca.co.id/-/media/Feature/Header/HeaderLogo/logo-bca.svg

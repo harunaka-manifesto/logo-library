@@ -1,0 +1,93 @@
+name: Fetch logos
+
+# Runs the resolver on a GitHub runner, which has open outbound network access.
+# Trigger it from the Actions tab: Run workflow -> pick your options.
+on:
+  workflow_dispatch:
+    inputs:
+      only:
+        description: 'Figma-path prefix to limit the run (e.g. banks/indo). Blank = everything.'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Resolve candidates only, download nothing'
+        type: boolean
+        default: false
+      min_edge:
+        description: 'Minimum longest edge in px for raster sources'
+        required: false
+        default: '512'
+      delay:
+        description: 'Seconds between requests'
+        required: false
+        default: '1.0'
+      commit:
+        description: 'Commit the downloaded assets back to this branch'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Fetch logos
+        run: |
+          python3 scripts/fetch_logos.py \
+            ${{ inputs.dry_run && '--dry-run' || '' }} \
+            ${{ inputs.only && format('--only {0}', inputs.only) || '' }} \
+            --min-edge '${{ inputs.min_edge }}' \
+            --delay '${{ inputs.delay }}'
+
+      - name: Rebuild workbook
+        if: ${{ !inputs.dry_run }}
+        run: python3 scripts/build_sheet.py
+
+      # Always published, so you can inspect the results even without committing.
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: logo-assets
+          if-no-files-found: warn
+          path: |
+            assets/**
+            data/fetch_report.csv
+            data/master_list.tsv
+            data/master_list.csv
+            out/*.xlsx
+
+      - name: Commit assets
+        if: ${{ inputs.commit && !inputs.dry_run }}
+        run: |
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add -A assets data out
+          git diff --staged --quiet && echo 'nothing to commit' && exit 0
+          git commit -m 'Fetch logo assets via workflow run ${{ github.run_number }}'
+          git push
+
+      - name: Summary
+        if: always()
+        run: |
+          echo '### Fetch report' >> "$GITHUB_STEP_SUMMARY"
+          if [ -f data/fetch_report.csv ]; then
+            echo '' >> "$GITHUB_STEP_SUMMARY"
+            echo '| outcome | rows |' >> "$GITHUB_STEP_SUMMARY"
+            echo '| --- | --- |' >> "$GITHUB_STEP_SUMMARY"
+            tail -n +2 data/fetch_report.csv | cut -d, -f2 | sort | uniq -c \
+              | awk '{printf "| %s | %s |\n", $2, $1}' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'No report produced.' >> "$GITHUB_STEP_SUMMARY"
+          fi

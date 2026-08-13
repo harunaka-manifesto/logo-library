@@ -27,10 +27,8 @@ Consequences for the data in this repo:
   was **not** chosen by comparing downloaded candidates, as the brief's Phase 2 intends.
 - **No row is marked `Verified`**, because the verification the brief defines was not possible.
 
-To finish the job, re-run the sourcing pass in an environment whose egress policy permits
-brand/press-kit domains, app-store endpoints, Wikimedia Commons and the regulator registries.
-This dataset is the worklist for that run: institution list, paths and variant guidance all
-carry over unchanged.
+**`scripts/fetch_logos.py` is the fix.** Run it anywhere with open outbound HTTPS and it
+fills in everything this pass could not. See "Fetching the images" below.
 
 ## Where the deliverables live
 
@@ -56,7 +54,81 @@ convention (`banks/indo`, `banks/sea/{sg,my,th,ph,vn,kh,la,bn,mm}`, `ewallets/..
 | `data/master_list.tsv` | Canonical dataset, 134 rows, tab-separated |
 | `data/master_list.csv` | Same data, CSV (this is what is uploaded to Google Sheets) |
 | `scripts/build_sheet.py` | Builds the two-tab `.xlsx` workbook from the TSV |
+| `scripts/fetch_logos.py` | Resolves and downloads the logo assets |
+| `data/source_overrides.tsv` | Manual URL pins for rows the resolver gets wrong |
+| `data/fetch_report.csv` | Per-row outcome of the last fetch run |
+| `assets/` | Downloaded logo files, laid out as `assets/{figma path}.{ext}` |
 | `out/` | Generated workbook |
+
+## Fetching the images
+
+Two ways to run it. Neither needs anything from the session that built this index.
+
+### Option A — GitHub Actions (no local setup)
+
+Actions tab -> **Fetch logos** -> **Run workflow**. Runners have open network access, so it
+just works. Options: `only` to limit to a path prefix, `dry_run` to resolve without
+downloading, `commit` to push the assets back to the branch. Results are always attached to
+the run as a `logo-assets` artifact, and the run summary shows an outcome tally.
+
+Start with `dry_run: true` and `only: banks/indo` to see what it resolves before committing
+to a full run.
+
+### Option B — locally
+
+```bash
+pip install -r requirements.txt
+
+python3 scripts/fetch_logos.py --dry-run --only banks/indo   # look before you leap
+python3 scripts/fetch_logos.py --only banks/indo             # fetch one slice
+python3 scripts/fetch_logos.py                               # fetch everything
+```
+
+Useful flags: `--limit N`, `--delay` (default 1.0s between requests), `--force` to
+re-download rows that already have a file, `--min-edge` to change the 512px floor,
+`--no-robots` to skip robots.txt checks, `--include-sanctioned` to opt Myanmar rows in.
+
+### How it resolves a logo
+
+Each row has no source URL, so the script tries several sources in the order the brief
+prefers, then scores every candidate it found:
+
+1. **The brand's own site** — `<link rel=icon>`, `apple-touch-icon`, `og:image`, and any
+   `<img>` whose src/alt/class looks like a logo. It also follows one press/brand/newsroom
+   link if the homepage has one, since that is where press kits live.
+2. **The official app-store icon** via the iTunes Search API, matched against the
+   institution name so a third-party app can't slip through. This is the best source for
+   the `app-icon` variant.
+3. **Wikimedia Commons**, recording the licence on each candidate so reuse can be checked.
+4. **A favicon service**, only if everything above found nothing, and always flagged in
+   Notes as a low-resolution stand-in to replace.
+
+Scoring prefers, in order: vector over raster, a match for the row's recommended variant,
+official sources over aggregated ones, transparency, then size. Raster candidates below the
+512px floor are rejected rather than upscaled, exactly as the brief requires.
+
+After a successful download it writes back `Logo Source URL`, `Native Aspect Ratio`
+(measured, e.g. `3.00:1 (horizontal, 900x300)`), `Background Type` (transparency actually
+detected from the alpha channel), and `Downloaded File Link`, and appends the source and
+licence to Notes.
+
+### What it will not touch
+
+Rows marked `Flagged - Excluded` are skipped — those brands are defunct. Myanmar rows are
+skipped unless you pass `--include-sanctioned`, which prints a warning reminding you to
+screen against current designations first. Existing files are never overwritten without
+`--force`.
+
+### When it gets one wrong
+
+Some rows will resolve to the wrong asset — a favicon instead of a wordmark, a partner's
+logo, a stale pre-rebrand file. Put the correct direct URL in `data/source_overrides.tsv`
+(one `figma path<TAB>URL` per line) and re-run; overrides beat every resolver. Check
+`data/fetch_report.csv` after each run to see what landed and what needs a pin.
+
+Nothing the script writes is marked `Verified`. Auto-resolution is a strong starting point,
+not the human confirmation the brief defines — the rebrand traps listed below are exactly
+the cases a machine will get wrong.
 
 ## Naming convention
 
@@ -113,13 +185,22 @@ switching Indonesia to `id` would make the whole tree consistent.
 
 | Category | Rows |
 |---|---|
-| bank | 69 |
+| bank | 140 |
 | ewallet | 45 |
 | ecommerce | 12 |
 | minimarket | 8 |
-| **Total** | **134** |
+| **Total** | **205** |
 
-Of these, 130 are `Needs Review` and 4 are `Flagged - Excluded`.
+Indonesia 132 (101 banks, 11 e-wallets, 12 e-commerce, 8 minimarkets), SEA 62,
+International 11.
+
+The Indonesian bank list aims to cover the commercial banks (*bank umum*) a transfer or
+virtual-account picker actually needs — the big four, private nationals, digital banks,
+sharia banks, foreign and joint-venture banks, and all the regional development banks
+(BPD). Rural banks (BPR) are deliberately out of scope; there are thousands and they do not
+appear in consumer payment UIs.
+
+Of these, 201 are `Needs Review` and 4 are `Flagged - Excluded`.
 
 ## Licensing note
 
