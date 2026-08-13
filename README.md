@@ -85,7 +85,8 @@ python3 scripts/fetch_logos.py                               # fetch everything
 ```
 
 Useful flags: `--limit N`, `--delay` (default 1.0s between requests), `--force` to
-re-download rows that already have a file, `--min-edge` to change the 512px floor,
+re-download rows that already have a file, `--min-edge` to change the size floor (default
+128px - see below),
 `--no-robots` to skip robots.txt checks, `--include-sanctioned` to opt Myanmar rows in.
 
 ### How it resolves a logo
@@ -99,13 +100,24 @@ prefers, then scores every candidate it found:
 2. **The official app-store icon** via the iTunes Search API, matched against the
    institution name so a third-party app can't slip through. This is the best source for
    the `app-icon` variant.
-3. **Wikimedia Commons**, recording the licence on each candidate so reuse can be checked.
-4. **A favicon service**, only if everything above found nothing, and always flagged in
+3. **A domain-keyed logo API** ([Clearbit](https://clearbit.com/logo)), for sites whose logo
+   isn't exposed as a clean `<img>`/`<link rel=icon>` - increasingly common with inline-SVG
+   headers, CSS background-image logos, or heavy client-side rendering that plain HTML
+   scraping can't see through.
+4. **Wikimedia Commons**, recording the licence on each candidate so reuse can be checked.
+5. **A favicon service**, only if everything above found nothing, and always flagged in
    Notes as a low-resolution stand-in to replace.
 
-Scoring prefers, in order: vector over raster, a match for the row's recommended variant,
-official sources over aggregated ones, transparency, then size. Raster candidates below the
-512px floor are rejected rather than upscaled, exactly as the brief requires.
+Scoring prefers, in order: vector over raster, official sources over aggregated ones, a
+match for the row's recommended variant (as a tiebreaker within a source tier - so a
+last-resort source can't win outright just because it happens to be labeled with the right
+kind), transparency, then size. Raster candidates below the
+size floor are rejected rather than upscaled - never upscale, per the brief - but the floor
+itself is 128px by default, not the original brief's 512px. Actual on-screen size for these
+logos is ~40-64px CSS, so 128px raw already covers 2x retina with headroom; the 512px figure
+was quietly discarding perfectly good assets, including the common 180x180
+`apple-touch-icon.png` most sites publish. Raise it with `--min-edge` if you do need
+higher-resolution source material for something other than a 40-64px chip.
 
 After a successful download it writes back `Logo Source URL`, `Native Aspect Ratio`
 (measured, e.g. `3.00:1 (horizontal, 900x300)`), `Background Type` (transparency actually

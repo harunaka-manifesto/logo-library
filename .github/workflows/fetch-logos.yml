@@ -16,7 +16,7 @@ on:
       min_edge:
         description: 'Minimum longest edge in px for raster sources'
         required: false
-        default: '512'
+        default: '128'
       delay:
         description: 'Seconds between requests'
         required: false

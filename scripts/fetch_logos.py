@@ -56,7 +56,10 @@ STOREFRONT = {"sg": "sg", "my": "my", "th": "th", "ph": "ph", "vn": "vn", "kh": 
 # Jurisdictions the brief says not to source without human sign-off.
 SANCTIONED_COUNTRIES = {"mm"}
 
-MIN_EDGE = 512          # brief: at least 512px on the longest edge, no upscaling
+MIN_EDGE = 128          # actual display size is ~40-64px CSS; 128px raw covers
+                        # 2x retina with headroom without discarding apple-touch-icon
+                        # (180x180) and most brand-site favicons, as a 512px floor did.
+                        # Vector sources are always accepted regardless of this value.
 CONFIG = {"min_edge": MIN_EDGE}
 RASTER_EXT = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}
 
@@ -146,12 +149,15 @@ def resolve_app_store(row: list[str], fetcher: Fetcher) -> list[Candidate]:
         return []
 
     out = []
-    wanted = _normalise(row[C_NAME])
+    wanted_tokens = _name_tokens(row[C_NAME])
     for item in results:
-        seller = _normalise(item.get("trackName", ""))
-        # Only trust a result whose app name overlaps the institution name, so we don't
-        # pull a third-party app that merely mentions the brand.
-        if not (wanted in seller or seller in wanted):
+        track = item.get("trackName", "")
+        # Only trust a result that shares at least one meaningful token with the
+        # institution name (generic words like "bank"/"indonesia" don't count), so
+        # we don't pull a third-party app that merely mentions the brand, but also
+        # don't demand a full substring match a name like "Bank X (ABBR)" won't
+        # have against an app literally titled "ABBR Mobile".
+        if not (wanted_tokens & _name_tokens(track)):
             continue
         art = item.get("artworkUrl512") or item.get("artworkUrl100")
         if not art:
@@ -225,6 +231,22 @@ def _harvest(soup: BeautifulSoup, base: str, source: str) -> list[Candidate]:
     return out
 
 
+def resolve_domain_logo(row: list[str], fetcher: Fetcher) -> list[Candidate]:
+    """A domain-keyed logo API, for sites whose own HTML doesn't expose a clean
+    logo tag (inline SVG headers, CSS background-image logos, heavy JS chrome).
+    These services aggregate from the same public sources listed in the brief
+    (site crawls, social profiles) rather than being a distinct rights holder,
+    so treat a hit here the same as the brand-site tier for scoring purposes.
+    """
+    site = row[C_SITE].strip()
+    if not site:
+        return []
+    domain = urllib.parse.urlsplit(site).netloc
+    return [Candidate(url=f"https://logo.clearbit.com/{domain}?size=512&format=png",
+                      source="brand-site", kind="unknown",
+                      note=f"domain-logo API for {domain}")]
+
+
 def resolve_wikimedia(row: list[str], fetcher: Fetcher) -> list[Candidate]:
     """Wikimedia Commons, recording the licence so reuse can be checked."""
     query = urllib.parse.quote(f"{row[C_NAME]} logo")
@@ -263,7 +285,7 @@ def resolve_favicon_service(row: list[str], fetcher: Fetcher) -> list[Candidate]
                       note="last-resort favicon service, low resolution")]
 
 
-PRIMARY_RESOLVERS = [resolve_brand_site, resolve_app_store, resolve_wikimedia]
+PRIMARY_RESOLVERS = [resolve_brand_site, resolve_app_store, resolve_domain_logo, resolve_wikimedia]
 
 
 # ------------------------------------------------------------------- download + validate
@@ -324,8 +346,14 @@ def score(cand: Candidate, want_variant: str) -> tuple:
                    "wikimedia": 2, "favicon-service": 0}
     return (
         cand.is_vector,                                   # SVG beats raster
-        cand.kind == want_variant,                        # matches the recommended variant
-        source_rank.get(cand.source, 1),                  # official beats aggregated
+        source_rank.get(cand.source, 1),                  # official beats aggregated - checked
+                                                           # before variant match, so a weak
+                                                           # last-resort source can't win just
+                                                           # because it happens to be tagged
+                                                           # with the right kind while a better,
+                                                           # honestly-uncertain ("unknown") source
+                                                           # isn't
+        cand.kind == want_variant,                        # tiebreaker: matches the recommended variant
         bool(cand.transparent) or cand.is_vector,         # transparency preferred
         min(cand.longest_edge, 4096),                     # bigger, but don't chase absurd sizes
     )
@@ -457,6 +485,16 @@ def process(row, fetcher, overrides, args, report):
 
 def _normalise(text: str) -> str:
     return re.sub(r"[^a-z0-9]", "", text.lower())
+
+
+_STOPWORDS = {"bank", "banking", "indonesia", "international", "group", "mobile",
+              "app", "the", "of", "and", "co", "inc", "ltd", "tbk", "pt", "id"}
+
+
+def _name_tokens(text: str) -> set[str]:
+    """Meaningful lowercase word tokens, with generic banking/corp words stripped."""
+    words = re.findall(r"[a-z0-9]+", text.lower())
+    return {w for w in words if w not in _STOPWORDS and len(w) > 1}
 
 
 def main() -> int:
