@@ -140,12 +140,23 @@ the cases a machine will get wrong.
 | 4 | E-commerce | Indonesia | `ecommerce/indo/{name}` |
 | 5 | Banks | SEA, per country | `banks/sea/{country}/{name}` |
 | 6 | E-wallets | SEA, per country | `ewallets/sea/{country}/{name}` |
-| 7 | Banks | International | `banks/international/{name}` |
-| 8 | E-wallets / remittance | International | `ewallets/international/{name}` |
+| 7 | Banks | International, per country | `banks/international/{country}/{name}` |
+| 8 | E-wallets / remittance | International, per country or global | `ewallets/international/{country}/{name}` or `ewallets/international/{name}` |
 
 SEA country codes are ISO 3166-1 alpha-2, lowercase: `sg` `my` `th` `ph` `vn` `kh` `mm` `la`
 `bn`. Indonesia keeps the `indo` prefix for continuity. **Flagged as the brief asked:**
 switching Indonesia to `id` would make the whole tree consistent.
+
+International banks now use the same per-country pattern (`us` `gb` `de` `fr` `nl` `cn` `au`
+`ca` `jp` `kr` `hk`), scoped to where Wise and PandaRemit can actually deliver a transfer sent
+from Indonesia — not an exhaustive SWIFT enumeration, per the brief's original guardrail. The
+three banks originally filed flat (`banks/international/hsbc` etc.) were renamed to
+`banks/international/gb/hsbc`, `banks/international/us/citibank` and
+`banks/international/gb/standard-chartered` for consistency, since nothing has been imported
+into Figma yet and the paths were safe to fix. International e-wallets stay flat
+(`ewallets/international/{name}`) for the genuinely global remittance platforms (PayPal, Wise,
+Western Union, etc.), and gain a country segment only for wallets tied to one market
+(`ewallets/international/cn/alipay`, `.../cn/wechat-pay`, `.../gb/revolut`).
 
 ## Status legend
 
@@ -154,6 +165,18 @@ switching Indonesia to `id` would make the whole tree consistent.
 | `Verified` | Institution confirmed against its regulator's register **and** an official asset downloaded. **Not used in this pass** — neither check was possible. |
 | `Needs Review` | Researched candidate. Regulator confirmation and asset sourcing still outstanding. Per-row `notes` give the specific reason. |
 | `Flagged - Excluded` | Do not source an asset. Entity is defunct, exited the market, or discontinued. Reason in `notes`. |
+
+## Why International grew past the brief's original cap
+
+The brief's original guardrail was to keep International banks to roughly 15-20 entries and
+not enumerate every SWIFT member. That held for the first pass. It was then explicitly
+widened at the user's request to match what **Wise** (160+ countries) and **PandaRemit**
+(40+ corridors, explicitly including Indonesia as a send market) actually let someone
+transfer to from Indonesia — United States, United Kingdom, Germany, France, Netherlands,
+China, Australia, Canada, Japan, South Korea and Hong Kong. Within each country the banks
+listed are the major consumer institutions a recipient is actually likely to hold an account
+at, not a SWIFT enumeration — still bounded, just against a different, source-backed
+criterion than the original page count.
 
 ## Market-status findings that change the brief's starting lists
 
@@ -185,14 +208,14 @@ switching Indonesia to `id` would make the whole tree consistent.
 
 | Category | Rows |
 |---|---|
-| bank | 140 |
-| ewallet | 45 |
+| bank | 181 |
+| ewallet | 48 |
 | ecommerce | 12 |
 | minimarket | 8 |
-| **Total** | **205** |
+| **Total** | **249** |
 
 Indonesia 132 (101 banks, 11 e-wallets, 12 e-commerce, 8 minimarkets), SEA 62,
-International 11.
+International 56 (44 banks across 11 countries, 12 e-wallets — 3 country-scoped, 9 global).
 
 The Indonesian bank list aims to cover the commercial banks (*bank umum*) a transfer or
 virtual-account picker actually needs — the big four, private nationals, digital banks,
@@ -200,7 +223,7 @@ sharia banks, foreign and joint-venture banks, and all the regional development 
 (BPD). Rural banks (BPR) are deliberately out of scope; there are thousands and they do not
 appear in consumer payment UIs.
 
-Of these, 201 are `Needs Review` and 4 are `Flagged - Excluded`.
+Of these, 246 are `Needs Review` and 4 are `Flagged - Excluded`.
 
 ## Licensing note
 

@@ -49,7 +49,9 @@ C_SOURCE, C_VARIANT, C_REASON, C_ASPECT, C_BG, C_FILE, C_STATUS, C_NOTES = 6, 7,
 
 # App Store storefronts, keyed by the master list's country / region value.
 STOREFRONT = {"sg": "sg", "my": "my", "th": "th", "ph": "ph", "vn": "vn", "kh": "kh",
-              "mm": "mm", "la": "la", "bn": "bn", "Indonesia": "id", "International": "us"}
+              "mm": "mm", "la": "la", "bn": "bn", "us": "us", "gb": "gb", "de": "de",
+              "fr": "fr", "nl": "nl", "cn": "cn", "au": "au", "ca": "ca", "jp": "jp",
+              "kr": "kr", "hk": "hk", "Indonesia": "id", "International": "us"}
 
 # Jurisdictions the brief says not to source without human sign-off.
 SANCTIONED_COUNTRIES = {"mm"}
