@@ -37,7 +37,7 @@ SCOPE = [
     ("4", "E-commerce platforms", "Indonesia", "ecommerce/indo/{name}"),
     ("5", "Banks", "SEA, per country", "banks/sea/{country}/{name}"),
     ("6", "E-wallets", "SEA, per country", "ewallets/sea/{country}/{name}"),
-    ("7", "Banks", "International", "banks/international/{name}"),
+    ("7", "Banks", "International, per country", "banks/international/{country}/{name}"),
     ("8", "E-wallets / remittance", "International", "ewallets/international/{name}"),
 ]
 
@@ -47,13 +47,13 @@ COLDEFS = [
     ("Category", "bank / ewallet / minimarket / ecommerce"),
     ("Region", "Indonesia / SEA / International"),
     ("Country", "ISO alpha-2 for SEA rows; blank for Indonesia/International"),
-    ("Official Website", "Institution's own site. Compiled from research, NOT opened/confirmed this pass."),
-    ("Logo Source URL", "Exact page the asset was pulled from. EMPTY this pass - nothing was pulled."),
-    ("Variant Chosen", "icon / wordmark / app-icon. This pass records a RECOMMENDATION, not a chosen file."),
+    ("Official Website", "Institution's own site. Compiled from research; current entity status still needs human confirmation."),
+    ("Logo Source URL", "Exact source used for the current asset, or blank for a neutral fallback."),
+    ("Variant Chosen", "icon / wordmark / fallback. Bank app-store tiles are not accepted as primary assets."),
     ("Variant Reasoning", "1-line why this variant is recommended"),
-    ("Native Aspect Ratio", "TBD this pass - cannot be measured without the asset. Expectation only."),
-    ("Background Type", "TBD this pass - cannot be determined without the asset."),
-    ("Downloaded File Link", "Link to the file in the Drive folder. EMPTY this pass."),
+    ("Native Aspect Ratio", "Measured from the current asset."),
+    ("Background Type", "Measured/recorded transparency; fallback badges are intentionally neutral."),
+    ("Downloaded File Link", "Link to the current repository asset."),
     ("Status", "Verified / Needs Review / Flagged - Excluded"),
     ("Notes", "Anything a human should know before the Figma pass"),
 ]
@@ -68,31 +68,23 @@ LEGEND = [
 ]
 
 BLOCKER = [
-    "STATUS OF THIS PASS - READ FIRST",
+    "CURRENT ASSET AUDIT - 2026-08-14",
     "",
-    "Phase 1 (research / master list) is delivered. Phases 2 (download assets) is NOT, and Phase 3 is delivered "
-    "with asset-dependent columns empty.",
+    "The bank asset pass is implemented: 181 bank rows, 180 bank asset files, and one intentionally skipped "
+    "Myanmar row.",
     "",
-    "Reason: the environment this ran in has an egress policy that allows GitHub only. Every other host - brand "
-    "sites, press kits, app stores, Wikimedia Commons, regulator registries (OJK, BI, MAS, BNM, BOT, BSP, SBV) - "
-    "was refused at the proxy with HTTP 403 on CONNECT. Both the shell and the page-fetch tool are subject to that "
-    "same policy, so no logo file could be downloaded and no registry page could be opened. Web search was "
-    "available and was used, which is how the market-status findings below were established.",
+    "Audit result: 134 accepted primary assets, 28 neutral fallback badges, 18 non-blocking review warnings, "
+    "and 0 hard policy failures.",
     "",
-    "What that means for this sheet:",
-    "  - No logo files exist yet. The Drive asset folders are an empty scaffold.",
-    "  - 'Logo Source URL', 'Downloaded File Link', 'Native Aspect Ratio' and 'Background Type' are empty or TBD "
-    "on every row. They were deliberately left blank rather than guessed - a plausible-looking but unopened URL "
-    "would be worse than an empty cell.",
-    "  - 'Official Website' is compiled from research and general knowledge. Treat as a starting point to confirm, "
-    "not as verified fact.",
-    "  - 'Variant Chosen' is a reasoned recommendation based on how each brand's mark is normally used. It was NOT "
-    "chosen by comparing downloaded candidates, as Phase 2 step 2 intends.",
-    "  - No row is marked 'Verified', because the verification the brief defines was not possible.",
+    "Quality contract: corporate mark or lockup; SVG with viewBox where available; no app-store tile, page/social "
+    "image, embedded raster, or unreadable asset; raster minimum 128px on the longest edge; transparent or "
+    "intentional background.",
     "",
-    "To finish the job: re-run the sourcing pass in an environment whose egress policy permits brand/press-kit "
-    "domains, app store endpoints, Wikimedia Commons and the regulator registries. This sheet is the worklist for "
-    "that run - the institution list, paths, and variant guidance carry over unchanged.",
+    "Neutral fallback badges are not bank logos. They use institution-specific initials in a monochrome badge and "
+    "must be displayed with the institution name so an unresolved bank cannot look like another bank.",
+    "",
+    "Run scripts/audit_assets.py --category bank --check before using the collection. Entity/regulator and trademark "
+    "confirmation is still a human responsibility; the master-list status remains Needs Review by design.",
 ]
 
 FINDINGS = [
@@ -132,7 +124,7 @@ def build_readme(ws):
     r = 1
     ws.cell(r, 1, "Logo Library - Research Index").font = TITLE_FONT
     r += 1
-    ws.cell(r, 1, "Multi-region payment & retail logo research. Sheet + Drive scaffold pass.").font = Font(italic=True)
+    ws.cell(r, 1, "Multi-region payment & retail logo research with audited bank assets and explicit fallbacks.").font = Font(italic=True)
     r += 2
 
     for line in BLOCKER:

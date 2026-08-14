@@ -1,3 +1,22 @@
+# Checkpoint — 2026-08-14 asset audit
+
+The bank collection cleanup is now implemented on top of the fetch pass below.
+
+- 181 bank rows audited; 180 asset files present; the sanctioned Myanmar row remains skipped.
+- 134 primary assets pass the structural/source policy; 28 rows use explicit neutral fallback
+  badges; 18 rows have non-blocking review warnings; 0 hard failures.
+- 163 bank rows were replaced or provisioned. App-store/page/social candidates were removed
+  from bank primaries. Current Bank Jakarta, OCBC, KB Bank, KB Bank Syariah, and SMBC-era
+  identity traps are called out in the master list.
+- `scripts/audit_assets.py --category bank --check` is the acceptance check; the offline tests
+  are under `tests/`.
+- `data/logo_audit.csv` is the current machine-readable audit. `data/fetch_report.csv` remains
+  the historical automated-fetch report and should not be read as the current asset decision.
+- Remaining manual work is trademark/current-artwork confirmation, plus deciding whether the
+  fallback rows should be removed from a production-specific subset.
+
+The sections below describe the earlier fetch run and are retained as historical context.
+
 # Checkpoint — 2026-08-13
 
 Resume point for continuing this session tomorrow. Read this top to bottom before doing

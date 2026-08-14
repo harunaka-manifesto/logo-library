@@ -13,6 +13,10 @@ Sources are tried in the order the brief asks for: the brand's own site (includi
 press/brand page it links to), then the official app-store icon, then Wikimedia Commons,
 then a favicon service as a last resort. Rows marked ``Flagged - Excluded`` are skipped,
 and rows in sanctioned jurisdictions are skipped unless explicitly opted in.
+
+For bank rows, app-store icons, favicons, and page/social images are discovery signals
+only and are rejected as primary assets. Banks need a corporate mark or a manual neutral
+fallback; a mobile app tile is not a bank logo.
 """
 from __future__ import annotations
 
@@ -378,6 +382,21 @@ def usable(cand: Candidate) -> bool:
     return cand.is_vector or cand.longest_edge >= CONFIG["min_edge"]
 
 
+def allowed_for_primary(row: list[str], cand: Candidate, is_override: bool = False) -> bool:
+    """Apply the asset-role policy before a candidate can become a bank primary."""
+    if row[C_CAT] != "bank" or is_override:
+        return True
+    haystack = f"{cand.url} {cand.note}".lower()
+    # These are useful discovery sources but are not corporate primary artwork.
+    if cand.source in {"app-store", "favicon-service"} or cand.kind == "app-icon":
+        return False
+    if cand.source.endswith("-img") or any(token in haystack for token in (
+        "og:image", "social", "thumbnail", "banner", "paze_logo", "youtube-logo", "apple-touch", ".ico", "favicon",
+    )):
+        return False
+    return True
+
+
 def describe_aspect(cand: Candidate) -> str:
     if not (cand.width and cand.height):
         return "TBD"
@@ -449,6 +468,19 @@ def process(row, fetcher, overrides, args, report):
             candidates.extend(resolver(row, fetcher))
         if not candidates:
             candidates = resolve_favicon_service(row, fetcher)
+
+    if row[C_CAT] == "bank" and path not in overrides:
+        discovered = len(candidates)
+        candidates = [candidate for candidate in candidates if allowed_for_primary(row, candidate)]
+        if not candidates:
+            report.append({
+                "figma_path": path,
+                "outcome": "unresolved",
+                "detail": f"bank primary policy rejected {discovered} app-store/favicon/page-image candidate(s); add a manual corporate source or use a neutral fallback",
+                "url": "",
+            })
+            print(f"  MISS  {path}: candidates rejected by bank primary policy")
+            return False
 
     if not candidates:
         report.append({"figma_path": path, "outcome": "unresolved", "detail": "no candidates found", "url": ""})
