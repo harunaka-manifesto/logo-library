@@ -246,9 +246,119 @@ These are concrete failure modes that must not recur:
 - **WorldRemit raster quality:** the prior source was replaced with a clean official wordmark
   raster and fitted to the measured ratio rather than forcing it into a square.
 
-The final repaired e-wallet/merchant scope contains 34 components with 34 unique names. The
+The prior repaired e-wallet/merchant scope contains 34 components with 34 unique names. The
 post-repair audit passed with zero geometry failures, and 80 × 80 resize tests preserved the
-uniform scale behavior.
+uniform scale behavior. The later GoPay expansion adds 87 payment components and three new
+merchant components, bringing the existing Merchant section to 18 components.
+
+## GoPay-specific catalogue and import rules
+
+The GoPay expansion is an Indonesia-only, dated snapshot. The approved research source is
+`data/gopay_catalog.tsv`, with its methodology and review gate in
+`GOPAY_CATALOG_RESEARCH.md`. For every future scope, prepare and review this dated catalogue
+before asset fetching or Figma edits.
+
+- **Treat the in-app list as the final availability source.** GoPay's public help explains
+  that the complete biller list is searchable inside the app. Public promo pages and static
+  terms are evidence, not a permanent directory. Record the catalogue snapshot date and
+  re-check the in-app result before importing a row.
+- **Separate availability from identity.** A provider can have an official website and still
+  be a legacy or unavailable GoPay biller. `terms-only-review` rows require current in-app
+  confirmation; `legacy` rows are not fetched. Never promote a static terms entry directly to
+  a component.
+- **Label surface and platform conditions.** Keep `GoTagihan`, `GoPay Games`, direct GoPay
+  integration, and other surfaces in the row metadata. Mark Android-only products explicitly;
+  do not imply iOS availability from an Android-only GoTagihan category.
+- **Use provider/product marks, not category or app tiles.** PDAM, PBB, IPL, regional tax,
+  education, and similar directory categories do not have one universal logo. Keep generic
+  categories as research metadata and import only named, verifiable operators. PDAM is a
+  confirmed GoPay category, but it resolves to regional operators rather than one national
+  provider mark; record the regional directory and do not invent a generic PDAM logo. A game or
+  subscription's app-store icon is not its business/product mark unless the brand explicitly
+  uses that mark as its canonical standalone identity.
+- **Keep Games at brand level.** GoPay Games mixes mobile games, PC games, vouchers,
+  entertainment, Steam titles, and denominations. Create one row/component per product brand,
+  not per price, region, redemption code, campaign, or SKU. Deduplicate a brand that appears on
+  more than one GoPay surface; record the additional surfaces in metadata.
+- **Be conservative with game title artwork.** A cover image, promotional card, character
+  art, or product screenshot is not automatically a logo. Use a clean official title mark only
+  when it remains recognizable at 40 × 40; otherwise leave the row as `review-source` until a
+  canonical asset is verified.
+- **Record contradictions instead of smoothing them over.** KMT appears in current GoPay
+  promo material while the current e-money help page names Mandiri e-money, BNI TapCash, and
+  Flazz BCA. Keep KMT as a conditional review row until the current app resolves the conflict.
+- **Assume terms pages can be stale.** The static GoTagihan terms page contains useful named
+  billers, regional Samsat services, and historical entertainment/charity products. It also
+  contains entries that may be retired or rebranded. Preserve the evidence URL, but require
+  current-app verification before fetching any terms-only mark.
+- **Do not infer missing provider websites.** If a named regional authority, product, or
+  organisation has no verified official website, keep the field unresolved and use the GoPay
+  evidence for availability. Do not replace it with a guessed domain or an image-search URL.
+- **Keep scope boundaries explicit.** The open-ended QRIS merchant universe and generic Gojek
+  service marks are excluded. Do not expand the payment catalogue into an unbounded merchant
+  list simply because GoPay supports QRIS or many digital services. Merchant-promotion rows such
+  as Alfamidi, Alfagift, and Klik Indomaret are dated surfaces, not an exhaustive QRIS directory.
+- **Carry the research decision into provenance.** Every imported payment row must retain its
+  slug, source date, surface, availability condition, evidence URL, catalogue status, and logo
+  decision in the master data/source-overrides records. A logo asset without the availability
+  decision is incomplete.
+
+## GoPay implementation findings (2026-08-14)
+
+The first GoPay implementation exposed several resolver and asset-cleanup failures that must be
+treated as explicit regression cases in later expansions:
+
+- **Semantic matches are not identity proof.** The resolver matched `Free Fire` to Chicago Fire,
+  `eFootball` to the Brazilian Football Confederation, and `Honor of Kings` to the Level Infinite
+  publisher mark. Those rows were pinned to manually checked product marks in
+  `data/source_overrides.tsv`. Always compare the visible mark with the named product and its
+  official reference; a plausible filename or search result is not enough.
+- **App and service icons are not interchangeable with product marks.** XL first resolved to an
+  Android/app icon, BIGO to a mascot/app icon, Apple Services to an Apple Authorized Service
+  Provider mark, and WeTV to a fullscreen/social raster. These were rejected or replaced with
+  canonical standalone brand marks. The no-app-tile policy applies to payment, subscription,
+  and game rows just as it does to banks.
+- **Game artwork needs a title-mark decision.** Football Dream initially arrived as promotional
+  player/card artwork; only the recognizable title lockup was extracted into a transparent PNG.
+  Magic Chess initially resolved to a mascot icon and was replaced with a clean title lockup.
+  Cover art, character art, and campaign cards must never enter a reusable logo component.
+- **Opaque raster tiles need a source replacement, not just a smaller frame.** Battlefield 6 and
+  Dead by Daylight first used opaque 600x600 white tiles. The accepted sources are transparent
+  wordmarks with transparent padding cropped by `scripts/crop_transparent_padding.py`.
+  Mobile Legends and PUBG had white web canvases; `scripts/prepare_product_marks.py` removes the
+  canvas and records the cleanup in the master list. PUBG's earlier SVG also lacked a usable
+  `viewBox`; normalize the source before Figma import rather than relying on a parent resize.
+- **Contrast is a source-selection check.** Biznet's full wordmark had poor dark-background
+  headroom, so the official bright icon was used; MyRepublic was changed from a black-only mark
+  to a colored vector; Mobile Legends, PUBG, and Genshin were pinned to colored exact-match
+  marks. Black-only and white-only brand variants may still be intentionally background-specific:
+  do not recolor or add a decorative background inside the reusable component. Run both light and
+  dark screenshots, record the chosen variant, and tell consumers when a mark requires a matching
+  surface.
+- **Shared marks and source-size warnings are review metadata.** XL and XL Satu legitimately
+  share the XL source, while several clean raster wordmarks are below the preferred 256px headroom.
+  Record `exact-duplicate/shared-mark` or `low-headroom` as a review warning; do not “fix” either
+  by inventing a different logo or upscaling a small source.
+- **Populate named sections when evidence and identity are both ready.** Finance & Insurance,
+  Government & Public, and Education & Invoicing are now populated with verified named marks:
+  AEON/BFI/Home Credit/OTO/Suzuki Finance/Prudential; regional Samsat marks; and SPIL/Paper.id.
+  Keep generic categories and unresolved terms-only rows in research metadata rather than filling
+  them with guessed category logos.
+- **Repair exceptional official assets before Figma.** CBN's rounded tile, Transvision's
+  Superbrands badge, Samsat Jateng's surrounding seals/mascot, Pegadaian's unused Inkscape clip,
+  and OTO's embedded-raster SVG were all cleaned or extracted before import. Paper.id's official
+  light SVG had a white canvas and empty clip path; remove both and recolor only the white
+  wordmark paths to a readable dark variant derived from the same official source.
+- **Color corrections must be brand-accurate.** Google Play and Xbox were replaced with current
+  full-color vectors after monochrome or wrong variants were found. Keep the exact source URL and
+  reason in `data/source_overrides.tsv` whenever a resolver result is replaced.
+
+The approved GoPay pass imported 87 payment marks. The importer accepts only `confirmed-current`
+rows with an approved logo decision, so KMT (`confirmed-conditional`) and all `terms-only-review`,
+`legacy`, generic, and excluded rows remain out of Figma until their availability and identity are
+resolved. The repeatable cleanup order is: pin ambiguous sources, fetch, validate payload type,
+normalize exceptional SVGs, crop or remove justified raster padding/canvases, run the asset audit,
+then perform Figma recursive scaling, light/dark screenshots, and the 80 × 80 instance test.
 
 ## Expansion checklist
 
@@ -265,4 +375,13 @@ Before handing off a new category, confirm:
 - [ ] the automated geometry/name/resize audit passes with zero failures;
 - [ ] temporary QA backgrounds and any temporary inspection nodes were removed/restored;
 - [ ] unresolved identity decisions are labelled for human review instead of guessed.
-
+- [ ] GoPay rows are dated snapshots and current-app availability was checked for every
+      terms-only or conditional provider;
+- [ ] Android-only and surface-specific products are labelled in component metadata;
+- [ ] generic bill categories were kept as research metadata rather than assigned guessed
+      logos;
+- [ ] GoPay Games products were deduplicated at brand level and denominations/SKUs were not
+      imported;
+- [ ] contradictions between current promo/help pages and static terms were recorded and
+      resolved before import;
+- [ ] QRIS merchant-universe and generic Gojek-service boundaries were not expanded silently.

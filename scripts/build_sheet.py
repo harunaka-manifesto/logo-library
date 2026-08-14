@@ -39,12 +39,13 @@ SCOPE = [
     ("6", "E-wallets", "SEA, per country", "ewallets/sea/{country}/{name}"),
     ("7", "Banks", "International, per country", "banks/international/{country}/{name}"),
     ("8", "E-wallets / remittance", "International", "ewallets/international/{name}"),
+    ("9", "GoPay billers and digital products", "Indonesia", "payments/indo/{category}/{name}"),
 ]
 
 COLDEFS = [
     ("Figma Path", "The exact future layer name, e.g. banks/sea/sg/dbs"),
     ("Institution Name", "Common display name"),
-    ("Category", "bank / ewallet / minimarket / ecommerce"),
+    ("Category", "bank / ewallet / minimarket / ecommerce / payment"),
     ("Region", "Indonesia / SEA / International"),
     ("Country", "ISO alpha-2 for SEA rows; blank for Indonesia/International"),
     ("Official Website", "Institution's own site. Compiled from research; current entity status still needs human confirmation."),

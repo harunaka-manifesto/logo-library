@@ -42,6 +42,25 @@ class AssetAuditTests(unittest.TestCase):
         self.assertTrue(allowed_for_primary(row, official))
         self.assertTrue(allowed_for_primary(row, app, is_override=True))
 
+    def test_payment_primary_policy_rejects_app_icons_and_page_images(self):
+        row = [""] * 14
+        row[2] = "payment"
+        app = Candidate("https://example.test/app.png", "app-store", "app-icon")
+        page = Candidate("https://example.test/banner.png", "brand-site-img", "wordmark")
+        official = Candidate("https://example.test/logo.svg", "brand-site", "wordmark")
+        self.assertFalse(allowed_for_primary(row, app))
+        self.assertFalse(allowed_for_primary(row, page))
+        self.assertTrue(allowed_for_primary(row, official))
+
+    def test_svg_rejects_html_and_embedded_raster_payloads(self):
+        with tempfile.TemporaryDirectory() as temp:
+            html_path = Path(temp) / "error.svg"
+            html_path.write_text("<!doctype html><html><body>not an svg</body></html>")
+            image_path = Path(temp) / "embedded.svg"
+            image_path.write_text('<svg viewBox="0 0 10 10"><image href="data:image/png;base64,AAAA"/></svg>')
+            self.assertIn("invalid-svg", analyse_asset(html_path)["issues"])
+            self.assertIn("svg-embedded-raster", analyse_asset(image_path)["issues"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Audit bank logo assets against the small-UI quality contract.
+"""Audit bank and payment logo assets against the small-UI quality contract.
 
 The audit is deliberately conservative about provenance and structure. It can
 prove that an asset is a usable file, scalable or large enough for a 24–48px
@@ -145,10 +145,21 @@ def analyse_asset(path: pathlib.Path, role: str = "primary") -> dict[str, object
             for rect in re.findall(r"<rect\b[^>]*>", painted_content):
                 # Exporters commonly add an explicit transparent canvas rect;
                 # class="f" is the convention used by the SCB source below.
+                rect_class = re.search(r"\bclass\s*=\s*[\"']([^\"']+)[\"']", rect)
+                class_is_non_painting = bool(
+                    rect_class
+                    and re.search(
+                        rf"\.{re.escape(rect_class.group(1).split()[0])}\s*\{{[^}}]*fill\s*:\s*none",
+                        lower,
+                    )
+                )
                 non_painting = (
                     re.search(r"\bclass\s*=\s*[\"'][^\"']*\bf\b[^\"']*[\"']", rect)
                     or re.search(r"\bfill\s*=\s*[\"']none[\"']", rect)
                     or re.search(r"\bstyle\s*=\s*[\"'][^\"']*fill\s*:\s*none", rect)
+                    or re.search(r"\bopacity\s*=\s*[\"']0(?:\.0*)?[\"']", rect)
+                    or re.search(r"\bfill-opacity\s*=\s*[\"']0(?:\.0*)?[\"']", rect)
+                    or class_is_non_painting
                 )
                 if non_painting:
                     continue
@@ -187,8 +198,21 @@ def _source_tier(row: dict[str, str], report: dict[str, dict[str, str]]) -> str:
         return "curated-idn"
     if "auraveni/global-bank-logos" in url:
         return "curated-global"
-    if "simple-icons" in url:
+    if "simple-icons" in url or "simpleicons.org" in url:
         return "curated-simple-icons"
+    if any(host in url for host in ("svgrepo.com", "seeklogo.com", "stickpng.com", "xlogo.org", "zonalogo.com")):
+        return "curated-vector"
+    if "folaplay.com" in url:
+        return "official-or-brand-site"
+    if any(host in url for host in (
+        "telkomsel.com", "indosatooredoo.com", "im3-img.indosatooredoo.com", "axis.co.id",
+        "tri.co.id", "biznetnetworks.com", "static.ext.dp.xl.co.id", "poppo.com",
+        "idn.app", "bstarstatic.com", "bigo.tv", "chamet.com", "honorofkings.com",
+        "blood-strike.com", "pointblank.id", "megaxus.com", "freefiremobile.com",
+        "nintendo.com", "f1manager.com", "baznas.go.id", "fm2.galasports.com",
+        "magicchessgogo.com", "youngjoygame.com", "ea.com", "drop-assets.ea.com",
+    )):
+        return "official-or-brand-site"
     if "kbbank.co.id" in url or "kbbanksyariah" in url or "commons.wikimedia.org" in url:
         return "official-or-authoritative"
     if "mzstatic.com" in url or "itunes.apple.com" in url:
@@ -209,13 +233,14 @@ def _provenance_flags(row: dict[str, str], tier: str, report: dict[str, dict[str
     url = row.get("source_url", "").lower()
     detail = report.get(row.get("figma_path", ""), {}).get("detail", "").lower()
     haystack = f"{url} {detail}"
-    if tier == "app-store" or "mzstatic.com" in url or "itunes.apple.com" in url:
+    policy_category = row.get("category") in {"bank", "payment"}
+    if policy_category and (tier == "app-store" or "mzstatic.com" in url or "itunes.apple.com" in url):
         issues.append("app-store-source")
-    if row.get("variant") == "app-icon":
+    if policy_category and row.get("variant") == "app-icon":
         issues.append("mobile-app-role")
-    if any(token in haystack for token in ("og:image", "social", "thumbnail", "paze_logo", "youtube-logo", "banker-with", "call.png")):
+    if policy_category and any(token in haystack for token in ("og:image", "social", "thumbnail", "paze_logo", "youtube-logo", "banker-with", "call.png", "apple-touch", "favicon")):
         issues.append("page-or-social-image")
-    if tier == "favicon":
+    if policy_category and tier == "favicon":
         warnings.append("favicon-source; replace with corporate artwork when available")
     if not row.get("source_url") and tier != "fallback":
         warnings.append("unattributed-source")
@@ -320,14 +345,14 @@ FIELDNAMES = [
 def write_report(records: list[dict[str, str]], output: pathlib.Path) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("w", encoding="utf-8", newline="") as fh:
-        writer = csv.DictWriter(fh, fieldnames=FIELDNAMES)
+        writer = csv.DictWriter(fh, fieldnames=FIELDNAMES, lineterminator="\n")
         writer.writeheader()
         writer.writerows(records)
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--category", default="bank", help="category to audit (default: bank); empty means all")
+    ap.add_argument("--category", default="bank", help="category to audit (default: bank); use payment for GoPay rows; empty means all")
     ap.add_argument("--output", type=pathlib.Path, default=DEFAULT_OUTPUT)
     ap.add_argument("--write", action="store_true", help="write the CSV report (also implied by --check)")
     ap.add_argument("--check", action="store_true", help="fail on missing files or policy violations")

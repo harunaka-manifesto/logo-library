@@ -14,9 +14,9 @@ press/brand page it links to), then the official app-store icon, then Wikimedia 
 then a favicon service as a last resort. Rows marked ``Flagged - Excluded`` are skipped,
 and rows in sanctioned jurisdictions are skipped unless explicitly opted in.
 
-For bank rows, app-store icons, favicons, and page/social images are discovery signals
-only and are rejected as primary assets. Banks need a corporate mark or a manual neutral
-fallback; a mobile app tile is not a bank logo.
+For bank and payment rows, app-store icons, favicons, and page/social images are discovery
+signals only and are rejected as primary assets. A mobile app tile is not a business or
+product logo.
 """
 from __future__ import annotations
 
@@ -44,8 +44,7 @@ OVERRIDES = ROOT / "data" / "source_overrides.tsv"
 REPORT = ROOT / "data" / "fetch_report.csv"
 ASSETS = ROOT / "assets"
 
-UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
-      "Chrome/126.0 Safari/537.36 (logo-library research index; contact repo owner)")
+UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7; logo-library research index)"
 
 # Columns in master_list.tsv, by index.
 C_PATH, C_NAME, C_CAT, C_REGION, C_COUNTRY, C_SITE = 0, 1, 2, 3, 4, 5
@@ -313,7 +312,17 @@ def download(cand: Candidate, fetcher: Fetcher) -> bool:
 
 def _measure_svg(cand: Candidate) -> bool:
     text = cand.data.decode("utf-8", "replace")
-    if "<svg" not in text.lower():
+    lower = text.lower()
+    # SVG comments often mention HTML (notably SVG Repo's attribution
+    # comments). Only reject an HTML response when the document's leading
+    # markup is an HTML shell, rather than matching arbitrary text anywhere.
+    markup = re.sub(r"<!--.*?-->", "", lower, flags=re.DOTALL)
+    leading = re.sub(r"^\s*<\?xml[^>]*>\s*", "", markup)
+    if "<svg" not in lower or re.match(r"(?:<!doctype\s+html|<html\b|<head\b|<body\b)", leading):
+        return False
+    if "<image" in lower or "data:image/" in lower:
+        return False
+    if re.search(r"(?:href|xlink:href)\s*=\s*[\"'](?:https?:|//)", lower):
         return False
     cand.is_vector = True
     cand.mime = "image/svg+xml"
@@ -328,6 +337,17 @@ def _measure_svg(cand: Candidate) -> bool:
         if w and h:
             cand.width, cand.height = int(float(w.group(1))), int(float(h.group(1)))
     cand.transparent = "vector"
+    # A surprising number of otherwise-clean logo exports declare only
+    # width/height. Figma can import those files, but later recursive scaling
+    # can treat the artboard as an unbounded 1:1 canvas and clip the artwork.
+    # Normalize the source to an explicit viewBox before it is written so the
+    # library's SVGs have a stable coordinate system.
+    if "viewbox" not in lower and cand.width and cand.height:
+        opening = re.search(r"<svg\b[^>]*>", text, flags=re.IGNORECASE | re.DOTALL)
+        if opening:
+            tag = opening.group(0)
+            tag = tag[:-1] + f' viewBox="0 0 {cand.width} {cand.height}">'
+            cand.data = (text[:opening.start()] + tag + text[opening.end():]).encode("utf-8")
     return bool(cand.width and cand.height)
 
 
@@ -345,6 +365,14 @@ def _measure_raster(cand: Candidate) -> bool:
         cand.transparent = False
     if not cand.mime.startswith("image/"):
         cand.mime = Image.MIME.get(img.format, "image/png")
+    # ICO is sometimes the only canonical product mark published by a small
+    # digital service. Convert it to a real PNG before saving so the file
+    # extension, MIME type, and Figma upload all agree.
+    if img.format == "ICO" or cand.mime == "image/x-icon":
+        out = io.BytesIO()
+        img.convert("RGBA").save(out, format="PNG")
+        cand.data = out.getvalue()
+        cand.mime = "image/png"
     return True
 
 
@@ -383,15 +411,16 @@ def usable(cand: Candidate) -> bool:
 
 
 def allowed_for_primary(row: list[str], cand: Candidate, is_override: bool = False) -> bool:
-    """Apply the asset-role policy before a candidate can become a bank primary."""
-    if row[C_CAT] != "bank" or is_override:
+    """Apply the no-app-tile/page-image policy to banks and payment providers."""
+    if row[C_CAT] not in {"bank", "payment"} or is_override:
         return True
     haystack = f"{cand.url} {cand.note}".lower()
     # These are useful discovery sources but are not corporate primary artwork.
     if cand.source in {"app-store", "favicon-service"} or cand.kind == "app-icon":
         return False
     if cand.source.endswith("-img") or any(token in haystack for token in (
-        "og:image", "social", "thumbnail", "banner", "paze_logo", "youtube-logo", "apple-touch", ".ico", "favicon",
+        "og:image", "social", "thumbnail", "banner", "paze_logo", "youtube-logo", "apple-touch",
+        "android-icon", "icon-192", "icon-512", "app-icon", "appicon", ".ico", "favicon",
     )):
         return False
     return True
@@ -469,17 +498,17 @@ def process(row, fetcher, overrides, args, report):
         if not candidates:
             candidates = resolve_favicon_service(row, fetcher)
 
-    if row[C_CAT] == "bank" and path not in overrides:
+    if row[C_CAT] in {"bank", "payment"} and path not in overrides:
         discovered = len(candidates)
         candidates = [candidate for candidate in candidates if allowed_for_primary(row, candidate)]
         if not candidates:
             report.append({
                 "figma_path": path,
                 "outcome": "unresolved",
-                "detail": f"bank primary policy rejected {discovered} app-store/favicon/page-image candidate(s); add a manual corporate source or use a neutral fallback",
+                "detail": f"{row[C_CAT]} primary policy rejected {discovered} app-store/favicon/page-image candidate(s); add a manual canonical source",
                 "url": "",
             })
-            print(f"  MISS  {path}: candidates rejected by bank primary policy")
+            print(f"  MISS  {path}: candidates rejected by {row[C_CAT]} primary policy")
             return False
 
     if not candidates:
@@ -560,6 +589,7 @@ def main() -> int:
     ap.add_argument("--only", default="", help="only rows whose Figma Path starts with this prefix")
     ap.add_argument("--limit", type=int, default=0, help="stop after N eligible rows")
     ap.add_argument("--delay", type=float, default=1.0, help="seconds between requests (default 1.0)")
+    ap.add_argument("--timeout", type=int, default=12, help="HTTP timeout in seconds (default 12)")
     ap.add_argument("--max-candidates", type=int, default=8, help="candidates to try per row")
     ap.add_argument("--min-edge", type=int, default=MIN_EDGE,
                     help=f"minimum longest edge in px for raster sources (default {MIN_EDGE}); "
@@ -578,7 +608,7 @@ def main() -> int:
               "screen against current OFAC/EU/UK designations before using these assets.\n")
 
     CONFIG["min_edge"] = args.min_edge
-    fetcher = Fetcher(delay=args.delay, respect_robots=not args.no_robots)
+    fetcher = Fetcher(delay=args.delay, timeout=args.timeout, respect_robots=not args.no_robots)
     overrides = load_overrides()
     report: list[dict] = []
     done = 0
@@ -596,10 +626,10 @@ def main() -> int:
     if not args.dry_run:
         MASTER.write_text("\n".join("\t".join(r) for r in [header] + body) + "\n", encoding="utf-8")
         with open(ROOT / "data" / "master_list.csv", "w", newline="", encoding="utf-8") as fh:
-            csv.writer(fh).writerows([header] + body)
+            csv.writer(fh, lineterminator="\n").writerows([header] + body)
 
     with open(REPORT, "w", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=["figma_path", "outcome", "detail", "url"])
+        writer = csv.DictWriter(fh, fieldnames=["figma_path", "outcome", "detail", "url"], lineterminator="\n")
         writer.writeheader()
         writer.writerows(report)
 
